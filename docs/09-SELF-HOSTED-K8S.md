@@ -198,7 +198,7 @@ kubectl -n openbrain rollout status deployment/openbrain-api
 
 ### Step 4: Apply Manifests
 
-Apply the Kubernetes resources in dependency order. The session affinity patch is critical — without it, MCP SSE connections can break when requests land on different pods.
+Apply the Kubernetes resources in dependency order. The session affinity patch is critical for the legacy SSE transport (`/sse` + `/messages`) — without it, SSE connections can break when requests land on different pods. The newer `/mcp` Streamable HTTP endpoint is stateless and does not need it. (Migrate clients off SSE with the [migration guide](14-MIGRATING-TO-STREAMABLE-HTTP.md).)
 
 ```bash
 # From E:\GitHub\OpenBrain\k8s\ directory
@@ -211,7 +211,8 @@ kubectl apply -f k8s/openbrain-tailscale-service.yaml    # Tailscale MagicDNS (t
 kubectl apply -f k8s/openbrain-funnel-ingress.yaml       # PUBLIC HTTPS via real Funnel
 # k8s/openbrain-tailscale-funnel.yaml is RETIRED - superseded by the Ingress above
 
-# Enable session affinity on the ClusterIP service (required for multi-replica SSE)
+# Enable session affinity on the ClusterIP service (required for multi-replica legacy SSE;
+# not needed for the stateless /mcp Streamable HTTP endpoint)
 kubectl patch svc openbrain-api -n openbrain \
   -p '{"spec":{"sessionAffinity":"ClientIP","sessionAffinityConfig":{"clientIP":{"timeoutSeconds":3600}}}}'
 ```
@@ -277,7 +278,13 @@ curl -s http://openbrain.tailfb4202.ts.net:8080/health
 # Via Tailscale Funnel (public HTTPS, from any network)
 curl -s https://openbrain.tailfb4202.ts.net/health
 
-# Test MCP SSE auth
+# Test MCP auth (/mcp — Streamable HTTP)
+curl -s "https://openbrain.tailfb4202.ts.net/mcp" \
+  -H "Authorization: Bearer YOUR_MCP_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+
+# Test legacy MCP SSE auth
 curl -s "https://openbrain.tailfb4202.ts.net/sse?key=YOUR_MCP_KEY" --max-time 2
 ```
 
@@ -287,9 +294,10 @@ See [04-MCP-SERVER.md](04-MCP-SERVER.md) for client configs. Use these URLs:
 
 | Client | Network | URL |
 |---|---|---|
-| Claude Code / Cursor (SSE) | Tailscale | `http://openbrain.tailfb4202.ts.net:8080/sse?key=<KEY>` |
-| Claude Code / Cursor (SSE) | LAN | `http://192.168.x.x:8080/sse?key=<KEY>` |
-| Claude Code / Cursor (SSE) | Public (Funnel) | `https://openbrain.tailfb4202.ts.net/sse?key=<KEY>` |
+| Claude Code / Cursor (`/mcp`) | Tailscale | `http://openbrain.tailfb4202.ts.net:8080/mcp` |
+| Claude Code / Cursor (`/mcp`) | Public (Funnel) | `https://openbrain.tailfb4202.ts.net/mcp` |
+| Claude Code / Cursor (legacy SSE) | Tailscale | `http://openbrain.tailfb4202.ts.net:8080/sse?key=<KEY>` |
+| Claude Code / Cursor (legacy SSE) | LAN | `http://192.168.x.x:8080/sse?key=<KEY>` |
 | Claude Desktop (mcp-remote) | Any network | `npx -y mcp-remote https://openbrain.tailfb4202.ts.net/sse?key=<KEY>` |
 
 ---
@@ -304,7 +312,7 @@ Uses the Tailscale K8s Operator with a `loadBalancerClass: tailscale` service.
 ```
 Any device on your tailnet (laptop, phone, tablet, other servers)
   → http://openbrain.tailfb4202.ts.net:8000  (REST API)
-  → http://openbrain.tailfb4202.ts.net:8080  (MCP SSE)
+  → http://openbrain.tailfb4202.ts.net:8080  (MCP: /mcp Streamable HTTP + /sse legacy)
 ```
 
 - **Tailscale IP**: `100.118.118.101`
@@ -319,7 +327,7 @@ Access from devices on your home network.
 ```
 Devices on LAN
   → http://192.168.68.120:8000  (REST API)
-  → http://192.168.68.120:8080  (MCP SSE)
+  → http://192.168.68.120:8080  (MCP: /mcp Streamable HTTP + /sse legacy)
 ```
 
 ### Option C: Tailscale Funnel (Public HTTPS) ✅ Active
@@ -329,7 +337,7 @@ Required for devices **not** on your tailnet (e.g. a work PC without Tailscale i
 
 ```
 Any device on the internet
-  → https://openbrain.tailfb4202.ts.net  (MCP SSE, port 443)
+  → https://openbrain.tailfb4202.ts.net  (MCP: /mcp Streamable HTTP + /sse legacy, port 443)
 ```
 
 - **TLS**: Automatically provisioned by Tailscale

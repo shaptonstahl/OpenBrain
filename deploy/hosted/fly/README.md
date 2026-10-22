@@ -26,7 +26,7 @@ fly secrets set \
 fly deploy
 ```
 
-Your MCP endpoint: `https://openbrain-<your-handle>.fly.dev/sse?key=<YOUR_MCP_ACCESS_KEY>`
+Your MCP endpoint: `https://openbrain-<your-handle>.fly.dev/mcp` (Streamable HTTP — send the key as `Authorization: Bearer <KEY>` or `x-brain-key`). Legacy: `https://openbrain-<your-handle>.fly.dev/sse?key=<YOUR_MCP_ACCESS_KEY>`
 
 ## Cost
 

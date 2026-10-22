@@ -26,13 +26,14 @@ const requestTotals = new Map<string, number>();
 const durationTotals = new Map<string, number>();
 
 /**
- * MCP `/sse` handshakes by how the key arrived. This exists to answer one
- * question with evidence rather than assumption: does anything still send the
- * key as `?key=`, so can MCP_ALLOW_KEY_IN_QUERY be turned off?
+ * MCP handshakes (both `/sse` and `/mcp`) by how the key arrived. This exists to
+ * answer one question with evidence rather than assumption: does anything still
+ * send the key as `?key=`, so can MCP_ALLOW_KEY_IN_QUERY be turned off?
  */
 const mcpHandshakeTotals = new Map<string, number>();
 
-export type KeySource = "header" | "query" | "none";
+/** Where an MCP access key was supplied: custom header, `Authorization: Bearer`, query string, or nowhere. */
+export type KeySource = "header" | "bearer" | "query" | "none";
 
 const SEP = "\u0000";
 
@@ -129,7 +130,7 @@ export function renderMetrics(pool: pg.Pool): string {
 
   out += header(
     "openbrain_mcp_handshakes_total",
-    "MCP /sse handshakes by how the access key was supplied.",
+    "MCP handshakes (/sse and /mcp) by how the access key was supplied.",
     "counter"
   );
   for (const [key, count] of mcpHandshakeTotals) {

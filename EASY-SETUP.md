@@ -86,9 +86,10 @@ Steps — follow exactly, don't skip:
    - curl http://localhost:8080/health → must also be healthy
    - If available, run: scripts/verify.ps1 http://localhost:8000  (or scripts/verify.sh)
 
-7. Configure the AI client I chose against http://localhost:8080/sse, sending the key
-   as the x-brain-key header (the ?key= URL form is off unless MCP_ALLOW_KEY_IN_QUERY=true).
-   Use the exact config snippets from README "Client Configuration".
+7. Configure the AI client I chose against http://localhost:8080/mcp (Streamable HTTP —
+   recommended), sending the key as the `Authorization: Bearer` or `x-brain-key` header.
+   The legacy http://localhost:8080/sse form also works (the ?key= URL form is off unless
+   MCP_ALLOW_KEY_IN_QUERY=true). Use the exact config snippets from README "Client Configuration".
 
 8. Show me a summary: MCP URL (key masked), what's running, and a sample first prompt
    like: "Save this thought: I just set up Open Brain on my laptop."
@@ -177,7 +178,8 @@ Step 2 — Fly.io MCP server:
 
 Step 3 — AI client config:
   - Ask which client (VS Code Copilot / Claude Desktop / Claude Code / Skip).
-  - Configure it with https://<fly-url>/sse and the x-brain-key header.
+  - Configure it with https://<fly-url>/mcp (Streamable HTTP) and the x-brain-key
+    or Authorization: Bearer header. Legacy: https://<fly-url>/sse.
 
 Step 4 — End-to-end verification:
   - Run scripts/verify.sh https://<fly-url>  (or scripts/verify.ps1 on Windows).

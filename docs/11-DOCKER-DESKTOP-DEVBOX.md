@@ -157,10 +157,11 @@ OPENBRAIN_API_URL=http://localhost:8000 npm run test:integration
 
 ## Step 5 — Connect your AI client
 
-The MCP endpoint on your dev box is:
+The MCP endpoint on your dev box is (prefer `/mcp` — Streamable HTTP):
 
 ```
-http://localhost:8080/sse?key=<YOUR_MCP_ACCESS_KEY>
+http://localhost:8080/mcp          # recommended — Authorization: Bearer <KEY>
+http://localhost:8080/sse?key=<YOUR_MCP_ACCESS_KEY>   # legacy
 ```
 
 ### VS Code / GitHub Copilot
@@ -171,8 +172,9 @@ Create `.vscode/mcp.json` in any workspace:
 {
   "servers": {
     "openbrain": {
-      "type": "sse",
-      "url": "http://localhost:8080/sse?key=YOUR_KEY"
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
+      "headers": { "Authorization": "Bearer YOUR_KEY" }
     }
   }
 }

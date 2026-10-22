@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Streamable HTTP transport at `/mcp` — the MCP spec's successor to the deprecated
+  HTTP+SSE transport. One endpoint serves both JSON and SSE responses, selected by the
+  client's `Accept` header. Stateless (no `sessionIdGenerator`), so there is no session
+  map and no `sessionAffinity: ClientIP` requirement on the new endpoint. The access key
+  is now also accepted as `Authorization: Bearer <key>` (the MCP convention), alongside
+  the existing `x-brain-key` header and `?key=` query (when `MCP_ALLOW_KEY_IN_QUERY=true`).
+  Precedence: `x-brain-key` → `Authorization: Bearer` → `?key=`.
+- The legacy `/sse` + `/messages` transport is unchanged and remains available for
+  existing clients; this is an additive, non-breaking change.
+
 ## [0.8.4] - 2026-08-20
 
 ### Changed

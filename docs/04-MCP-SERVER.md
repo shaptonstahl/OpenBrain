@@ -40,6 +40,26 @@ PostgreSQL + pgvector
 
 ---
 
+## Transports
+
+Open Brain serves two MCP transports on port `8080`:
+
+| Endpoint | Transport | Status |
+|---|---|---|
+| `/mcp` | Streamable HTTP (JSON **or** SSE, per `Accept` header) | **Recommended** — current MCP spec |
+| `/sse` + `/messages` | HTTP+SSE (deprecated by the MCP spec) | Legacy, kept for compatibility |
+
+`/mcp` is **stateless**: there is no session map and no `sessionAffinity: ClientIP`
+requirement (unlike `/sse`). The access key is authenticated on every request, accepted
+from three places in order of precedence: `x-brain-key` header → `Authorization: Bearer`
+header → `?key=` query (the last only when `MCP_ALLOW_KEY_IN_QUERY=true`).
+
+Use `/mcp` for new clients. Keep `/sse` only for existing configurations. To move
+existing clients over, see the
+[rolling migration guide](14-MIGRATING-TO-STREAMABLE-HTTP.md).
+
+---
+
 ## Tool Definitions
 
 Open Brain exposes 7 tools. Here's when to use each one:
@@ -281,11 +301,48 @@ These configs connect to your self-hosted Open Brain running on your K8s cluster
 
 ### URL Reference
 
-| Network | Protocol | URL |
-|---|---|---|
-| On tailnet | HTTP | `http://openbrain.tailfb4202.ts.net:8080/sse?key=<KEY>` |
-| Off tailnet (Funnel) | HTTPS | `https://openbrain.tailfb4202.ts.net/sse?key=<KEY>` |
-| LAN only | HTTP | `http://192.168.68.120:8080/sse?key=<KEY>` |
+> **Prefer `/mcp`** (Streamable HTTP) — it serves JSON and SSE from one endpoint, needs
+> no session affinity, and accepts the key as `x-brain-key` or `Authorization: Bearer`.
+> The `/sse` URLs below remain for existing clients.
+
+| Network | Protocol | `/mcp` (recommended) | `/sse` (legacy) |
+|---|---|---|---|
+| On tailnet | HTTP | `http://openbrain.tailfb4202.ts.net:8080/mcp` | `http://openbrain.tailfb4202.ts.net:8080/sse?key=<KEY>` |
+| Off tailnet (Funnel) | HTTPS | `https://openbrain.tailfb4202.ts.net/mcp` | `https://openbrain.tailfb4202.ts.net/sse?key=<KEY>` |
+| LAN only | HTTP | `http://192.168.68.120:8080/mcp` | `http://192.168.68.120:8080/sse?key=<KEY>` |
+
+For `/mcp`, send the key as `Authorization: Bearer <KEY>` (or `x-brain-key`); the
+`?key=` query form still works only when `MCP_ALLOW_KEY_IN_QUERY=true`.
+
+#### Streamable HTTP (`/mcp`) examples
+
+Claude Code — `"type": "http"` (connects directly, no `mcp-remote` bridge needed):
+
+```json
+{
+    "mcpServers": {
+        "openbrain": {
+            "type": "http",
+            "url": "https://openbrain.tailfb4202.ts.net/mcp",
+            "headers": { "Authorization": "Bearer <MCP_ACCESS_KEY>" }
+        }
+    }
+}
+```
+
+Cursor — `"transport": "http"`:
+
+```json
+{
+    "mcpServers": {
+        "openbrain": {
+            "url": "https://openbrain.tailfb4202.ts.net/mcp",
+            "transport": "http",
+            "headers": { "Authorization": "Bearer <MCP_ACCESS_KEY>" }
+        }
+    }
+}
+```
 
 #### Claude Desktop (any network — via Tailscale Funnel)
 
@@ -470,9 +527,11 @@ Every MCP tool has a REST API counterpart on port 8000, documented in the [READM
 - **Format**: 64-character hexadecimal string
 - **Generation**: `openssl rand -hex 32`
 - **Storage**: Supabase Edge Function secret (`MCP_ACCESS_KEY`)
-- **Transmission**: `x-brain-key` header (preferred) OR `?key=` URL param (fallback)
+- **Transmission**: `Authorization: Bearer` header or `x-brain-key` header (preferred) OR `?key=` URL param (fallback)
 
 ### Auth Flow
+
+The legacy SSE transport (`/sse` + `/messages`):
 
 ```
 1. Client connects to /sse with key (x-brain-key header or ?key= URL param)
@@ -482,6 +541,9 @@ Every MCP tool has a REST API counterpart on port 8000, documented in the [READM
 5. Subsequent /messages POSTs authenticated implicitly via session ID
    (no key required — having a valid sessionId proves prior authentication)
 ```
+
+The Streamable HTTP transport (`/mcp`) is **stateless** — every request carries and is
+authenticated by the key (steps 1–3 repeat per request; there is no session ID).
 
 > **Note**: The `/messages` endpoint does NOT require the API key. This is intentional —
 > `mcp-remote` and other SSE clients POST to `/messages?sessionId=xxx` without including
@@ -510,6 +572,9 @@ Every MCP tool has a REST API counterpart on port 8000, documented in the [READM
   kubectl patch svc openbrain-api -n openbrain \
     -p '{"spec":{"sessionAffinity":"ClientIP"}}'
   ```
+- **Better fix**: switch the client to `/mcp` (Streamable HTTP) — it is stateless and
+  does not need session affinity. See the
+  [migration guide](14-MIGRATING-TO-STREAMABLE-HTTP.md).
 
 ### mcp-remote ServerError / OAuth errors
 - **Cause**: The `/messages` endpoint is returning 401, triggering mcp-remote's OAuth flow

@@ -175,7 +175,7 @@ docker compose up -d
 
 This starts:
 - **PostgreSQL 17 + pgvector** on port 5432
-- **Open Brain API** on port 8000 (REST) and port 8080 (MCP SSE)
+- **Open Brain API** on port 8000 (REST) and port 8080 (MCP — Streamable HTTP `/mcp` + legacy SSE `/sse`)
 
 ### 4. Verify
 
@@ -209,6 +209,9 @@ The integration test suite runs 27 tests covering every endpoint — capture, ba
 If anything fails, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). For what to do once it's working, see [docs/13-FIRST-HOUR.md](docs/13-FIRST-HOUR.md).
 
 ### 5. Connect an AI client
+
+> **Prefer `/mcp`** (Streamable HTTP) for new clients — it serves JSON and SSE from one
+> endpoint and needs no session affinity. `/sse` remains available for existing setups.
 
 Add to your Claude Code settings (`~/.claude/settings.json`):
 
@@ -581,6 +584,12 @@ The `created_by` parameter is fully optional — omit it and everything works ex
 
 ## Client Configuration
 
+> **Prefer `/mcp`** (Streamable HTTP) for new clients: one endpoint serving JSON and
+> SSE, no session affinity, and the key goes in `Authorization: Bearer` (or
+> `x-brain-key`) instead of the URL. The `/sse` examples below remain valid for
+> existing setups. Already on `/sse`? See the
+> [migration guide](docs/14-MIGRATING-TO-STREAMABLE-HTTP.md).
+
 > The examples below put the key in the URL. That form is **off by default** —
 > query strings land in access logs, proxy logs and browser history. Prefer the
 > `x-brain-key` header (Claude Code, Cursor, Windsurf and VS Code all support
@@ -589,7 +598,21 @@ The `created_by` parameter is fully optional — omit it and everything works ex
 
 ### Claude Code
 
-Add to `~/.claude/settings.json`:
+Add to `~/.claude/settings.json` (Streamable HTTP, recommended):
+
+```json
+{
+  "mcpServers": {
+    "openbrain": {
+      "type": "http",
+      "url": "http://<host>:8080/mcp",
+      "headers": { "Authorization": "Bearer <YOUR_MCP_ACCESS_KEY>" }
+    }
+  }
+}
+```
+
+Legacy SSE form:
 
 ```json
 {
@@ -800,7 +823,15 @@ curl -X POST http://<host>:8000/memories/search \
 
 ### Any Other MCP Client
 
-Open Brain works with any client that supports the MCP SSE transport:
+Open Brain works with any client that supports the MCP Streamable HTTP transport:
+
+| Setting | Value |
+|---------|-------|
+| **URL** | `http://<host>:8080/mcp` |
+| **Transport** | Streamable HTTP |
+| **Auth** | `Authorization: Bearer <YOUR_MCP_ACCESS_KEY>` |
+
+Legacy SSE (`/sse`) remains for clients that only speak SSE:
 
 | Setting | Value |
 |---------|-------|
@@ -836,7 +867,7 @@ For clients with **no MCP support**, use the REST API on port 8000 — every MCP
 | `MCP_ACCESS_KEY` | — | Shared bootstrap key (generate with `openssl rand -hex 32`). Prefer named keys — see [Access keys](#access-keys) |
 | `MCP_ALLOW_KEY_IN_QUERY` | `false` | Accept the key as `?key=` in the URL. Off by default — query strings are logged by proxies |
 | `API_PORT` | `8000` | REST API port |
-| `MCP_PORT` | `8080` | MCP SSE server port |
+| `MCP_PORT` | `8080` | MCP server port (Streamable HTTP `/mcp` + legacy SSE `/sse`) |
 | `LOG_LEVEL` | `info` | Logging level |
 
 ---
@@ -899,7 +930,7 @@ Open Brain runs two servers in a single process:
 | Server | Port | Transport | Purpose |
 |--------|------|-----------|---------|
 | REST API (Hono) | 8000 | HTTP/JSON | Direct access, webhooks, health checks |
-| MCP Server | 8080 | HTTP/SSE | AI client connections via Model Context Protocol |
+| MCP Server | 8080 | Streamable HTTP (`/mcp`) + HTTP/SSE (`/sse`, legacy) | AI client connections via Model Context Protocol |
 
 ---
 
@@ -1184,3 +1215,7 @@ MIT
 | [08-IMPLEMENTATION-ROADMAP.md](docs/08-IMPLEMENTATION-ROADMAP.md) | Build order and milestones |
 | [09-SELF-HOSTED-K8S.md](docs/09-SELF-HOSTED-K8S.md) | Kubernetes self-hosted deployment guide |
 | [10-AZURE-DEPLOYMENT.md](docs/10-AZURE-DEPLOYMENT.md) | Azure cloud deployment (Container Apps + Azure OpenAI) |
+| [11-DOCKER-DESKTOP-DEVBOX.md](docs/11-DOCKER-DESKTOP-DEVBOX.md) | Docker Desktop dev box (local, Win/Mac) |
+| [12-HOSTED-CHEAP.md](docs/12-HOSTED-CHEAP.md) | Cheap hosted deployment (Supabase / Neon / Fly) |
+| [13-FIRST-HOUR.md](docs/13-FIRST-HOUR.md) | First-hour quick-start guide |
+| [14-MIGRATING-TO-STREAMABLE-HTTP.md](docs/14-MIGRATING-TO-STREAMABLE-HTTP.md) | Rolling migration from the legacy SSE transport to `/mcp` Streamable HTTP |

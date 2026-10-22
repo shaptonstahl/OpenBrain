@@ -10,7 +10,7 @@ This guide deploys Open Brain as a fully managed Azure service with no servers t
 
 ```mermaid
 flowchart LR
-    A[Any AI Client] -->|MCP SSE| B[Azure Container Apps\nOpen Brain API]
+    A[Any AI Client] -->|MCP Streamable HTTP| B[Azure Container Apps\nOpen Brain API]
     B -->|Embeddings + LLM| C[Azure OpenAI\ntext-embedding-3-small\ngpt-4o-mini]
     B -->|SQL + Vectors| D[(Azure PostgreSQL Flex\n+ pgvector)]
     B -->|Secrets| E[Azure Key Vault]
@@ -95,7 +95,7 @@ The script outputs everything you need:
 ```
 === Deployment Complete ===
 
-  MCP Endpoint:   https://openbrain-api.niceforest-abc123.eastus2.azurecontainerapps.io/sse
+  MCP Endpoint:   https://openbrain-api.niceforest-abc123.eastus2.azurecontainerapps.io/mcp
   REST Endpoint:  https://openbrain-api.niceforest-abc123.eastus2.azurecontainerapps.io
   PostgreSQL:     openbrain-pg-abc123.postgres.database.azure.com
   Azure OpenAI:   https://openbrain-ai-abc123.openai.azure.com/
@@ -106,15 +106,17 @@ MCP Access Key: <your-64-char-hex-key>
 
 ### Connect Your AI Clients
 
-Use the MCP Endpoint + Key from the output:
+Use the MCP Endpoint + Key from the output. **Prefer `/mcp`** (Streamable HTTP — send the
+key as `Authorization: Bearer <KEY>`); the `/sse` legacy URLs still work.
 
 **VS Code / GitHub Copilot** (`.vscode/mcp.json`):
 ```json
 {
   "servers": {
     "openbrain": {
-      "type": "sse",
-      "url": "https://<your-app>.azurecontainerapps.io/sse?key=<YOUR_MCP_KEY>"
+      "type": "http",
+      "url": "https://<your-app>.azurecontainerapps.io/mcp",
+      "headers": { "Authorization": "Bearer <YOUR_MCP_KEY>" }
     }
   }
 }
@@ -125,14 +127,15 @@ Use the MCP Endpoint + Key from the output:
 {
   "mcpServers": {
     "openbrain": {
-      "type": "sse",
-      "url": "https://<your-app>.azurecontainerapps.io/sse?key=<YOUR_MCP_KEY>"
+      "type": "http",
+      "url": "https://<your-app>.azurecontainerapps.io/mcp",
+      "headers": { "Authorization": "Bearer <YOUR_MCP_KEY>" }
     }
   }
 }
 ```
 
-**Claude Desktop** (`claude_desktop_config.json`):
+**Claude Desktop** (`claude_desktop_config.json`) — legacy SSE via `mcp-remote`:
 ```json
 {
   "mcpServers": {

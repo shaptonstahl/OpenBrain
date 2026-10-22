@@ -2,7 +2,7 @@
 
 > This file is read automatically by GitHub Copilot, Claude Code, Cursor, Aider, Devin, and other AI agents that look for `AGENTS.md` (the emerging cross-tool convention). If you're a human reader, you can safely ignore it — head to the [README](README.md) instead.
 
-You are an AI agent helping a user with Open Brain — a persistent semantic-memory backend for AI tools, built on **Node 22 + TypeScript + PostgreSQL + pgvector**, exposing **REST** (`:8000`) and **MCP-over-SSE** (`:8080`).
+You are an AI agent helping a user with Open Brain — a persistent semantic-memory backend for AI tools, built on **Node 22 + TypeScript + PostgreSQL + pgvector**, exposing **REST** (`:8000`) and **MCP** (`:8080`) over Streamable HTTP (`/mcp`) and legacy HTTP+SSE (`/sse` + `/messages`).
 
 ---
 
@@ -50,7 +50,7 @@ There are **five canonical paths**. Pick one by interviewing the user — do not
 2. Then consult [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for that layer.
 3. Common gotchas you'll see often:
    - Ollama on host + container can't reach it → fix is `host.docker.internal` not `localhost`.
-   - Multi-replica K8s + SSE drops → fix is `sessionAffinity: ClientIP`.
+   - Multi-replica K8s + SSE drops → fix is `sessionAffinity: ClientIP`. (The newer `/mcp` Streamable HTTP endpoint is stateless and does not need session affinity.)
    - Supabase `prepared statement already exists` → fix is pooler URL (port 6543), not direct (5432).
    - Claude Desktop "MCP server failed" → almost always wrong port (`8080` for MCP, not `8000`) or key mismatch.
    - `404` on `/memories/*` from outside the cluster → REST (port 8000) is **in-cluster only** by design; the Tailscale Funnel only exposes MCP on 8080. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#network-exposure-which-ports-go-where).

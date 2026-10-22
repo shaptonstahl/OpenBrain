@@ -13,7 +13,7 @@ A `render.yaml` blueprint for one-click deploy to Render's free tier. **Bring yo
    - `OPENROUTER_API_KEY` — get one at [openrouter.ai/keys](https://openrouter.ai/keys)
 5. Trigger deploy. ~3 minutes later you have an HTTPS URL.
 
-Your MCP endpoint: `https://openbrain-<unique>.onrender.com/sse?key=<YOUR_MCP_ACCESS_KEY>`
+Your MCP endpoint: `https://openbrain-<unique>.onrender.com/mcp` (Streamable HTTP — send the key as `Authorization: Bearer <KEY>` or `x-brain-key`). Legacy: `https://openbrain-<unique>.onrender.com/sse?key=<YOUR_MCP_ACCESS_KEY>`
 
 ## Caveats
 

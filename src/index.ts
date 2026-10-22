@@ -3,14 +3,17 @@
  *
  * Starts both:
  * 1. Hono REST API server (port 8000)
- * 2. MCP SSE server via raw Node.js HTTP (port 8080)
+ * 2. MCP server via raw Node.js HTTP (port 8080)
  *
  * The REST API provides direct HTTP access for testing, Slack webhooks,
  * and any non-MCP integrations.
  *
  * The MCP server is the primary interface for AI tools (Claude, ChatGPT, etc).
- * It uses SSE transport over a raw Node.js HTTP server because
- * SSEServerTransport requires Node.js ServerResponse objects (not Web API).
+ * It serves two transports over one raw Node.js HTTP server:
+ *   - `/mcp`  — Streamable HTTP (stateless; the current MCP spec transport)
+ *   - `/sse` + `/messages` — the legacy HTTP+SSE transport, kept for compatibility
+ * Both use raw Node.js HTTP because the SDK transports need Node.js
+ * ServerResponse objects (not the Web API).
  */
 
 import http from "node:http";
@@ -19,9 +22,9 @@ import { serve } from "@hono/node-server";
 import { initializeDatabase, closePool, getPool } from "./db/connection.js";
 import { createApi } from "./api/routes.js";
 import { createMcpServer } from "./mcp/server.js";
-import { authenticateAccessKey, checkKeySources } from "./auth/accessKeys.js";
-import { recordMcpHandshake, type KeySource } from "./api/metrics.js";
-import { safeLogValue, describeRequestHeaders, clientAddress } from "./mcp/requestLog.js";
+import { checkKeySources } from "./auth/accessKeys.js";
+import { authenticateMcpRequest, writeMcpAuthDenial } from "./mcp/auth.js";
+import { createStreamableHttpTransport } from "./mcp/streamableHttp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
 /** An SSE session plus the identity of the key that opened it. */
@@ -85,9 +88,15 @@ async function main(): Promise<void> {
     console.log(`[api]   GET  /health            — health check`);
   });
 
-  // ── MCP Server (SSE over raw Node.js HTTP) ─────────────────────
+  // ── MCP Server (raw Node.js HTTP) ───────────────────────────────
 
   const mcpPort = parseInt(process.env.MCP_PORT ?? "8080", 10);
+
+  // Streamable HTTP transport — one long-lived Server + stateless transport.
+  // Every `/mcp` request is authenticated independently; there is no session map.
+  const streamableHttpServer = createMcpServer();
+  const streamableTransport = createStreamableHttpTransport();
+  await streamableHttpServer.connect(streamableTransport);
 
   // Track active SSE transports for cleanup
   const sessions = new Map<string, McpSession>();
@@ -95,8 +104,12 @@ async function main(): Promise<void> {
   const mcpHttpServer = http.createServer(async (req, res) => {
     // CORS headers
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-brain-key");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, x-brain-key, Authorization, Mcp-Session-Id"
+    );
+    res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
 
     if (req.method === "OPTIONS") {
       res.writeHead(204);
@@ -117,55 +130,15 @@ async function main(): Promise<void> {
     // Auth is checked here; /messages skips the key check because
     // having a valid sessionId proves the client already authenticated.
     if (url.pathname === "/sse" && req.method === "GET") {
-      const headerKey = req.headers["x-brain-key"] as string | undefined;
-      const queryKey = allowKeyInQuery ? url.searchParams.get("key") : null;
-      const key = headerKey ?? queryKey;
-
-      const keySource: KeySource = headerKey
-        ? "header"
-        : url.searchParams.has("key")
-          ? "query"
-          : "none";
-      const client = safeLogValue(req.headers["user-agent"]);
-      const addr = clientAddress(req.headers, req.socket.remoteAddress);
-
-      if (logHeaders) {
-        console.log(
-          `[mcp] /sse headers ${describeRequestHeaders(req.headers, req.socket.remoteAddress)}`
-        );
-      }
-
-      if (!allowKeyInQuery && keySource === "query") {
-        console.warn(
-          "[mcp] /sse denied: key supplied as ?key= but MCP_ALLOW_KEY_IN_QUERY is off"
-        );
-      }
-
-      const auth = await authenticateAccessKey(pool, key, {
+      const auth = await authenticateMcpRequest(pool, req, url, {
         legacyKey: mcpAccessKey,
-      }).catch((err: unknown) => {
-        // A key lookup that cannot run is not permission to skip it.
-        console.error(
-          "[mcp] /sse denied: access key lookup failed —",
-          err instanceof Error ? err.message : String(err)
-        );
-        return { ok: false as const, reason: "unavailable" as const };
+        allowKeyInQuery,
+        logHeaders,
+        endpoint: "/sse",
       });
 
-      recordMcpHandshake(keySource, auth.ok ? "ok" : auth.reason);
-
       if (!auth.ok) {
-        console.warn(
-          `[mcp] /sse denied (${auth.reason}) via=${keySource} addr=${addr} client="${client}"`
-        );
-        res.writeHead(auth.reason === "unavailable" ? 503 : 401, {
-          "Content-Type": "application/json",
-        });
-        res.end(
-          JSON.stringify({
-            error: auth.reason === "unavailable" ? "Unavailable" : "Unauthorized",
-          })
-        );
+        writeMcpAuthDenial(res, auth.reason);
         return;
       }
 
@@ -185,7 +158,7 @@ async function main(): Promise<void> {
       const server = createMcpServer();
       await server.connect(transport);
       console.log(
-        `[mcp] SSE session ${sessionId} connected (key: ${auth.label}${auth.keyId ? ` / ${auth.keyId}` : ""}) via=${keySource} addr=${addr} client="${client}"`
+        `[mcp] SSE session ${sessionId} connected (key: ${auth.label}${auth.keyId ? ` / ${auth.keyId}` : ""}) via=${auth.keySource} addr=${auth.addr} client="${auth.client}"`
       );
       return;
     }
@@ -207,21 +180,43 @@ async function main(): Promise<void> {
       return;
     }
 
+    // Streamable HTTP endpoint — serves JSON and SSE from one path. Stateless:
+    // every request is authenticated independently, and the SDK transport has no
+    // session to correlate across requests.
+    if (url.pathname === "/mcp") {
+      const auth = await authenticateMcpRequest(pool, req, url, {
+        legacyKey: mcpAccessKey,
+        allowKeyInQuery,
+        logHeaders,
+        endpoint: "/mcp",
+      });
+
+      if (!auth.ok) {
+        writeMcpAuthDenial(res, auth.reason);
+        return;
+      }
+
+      await streamableTransport.handleRequest(req, res);
+      return;
+    }
+
     // 404 fallback
     res.writeHead(404, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Not found" }));
   });
 
   mcpHttpServer.listen(mcpPort, "0.0.0.0", () => {
-    console.log(`[mcp] MCP SSE server listening on http://0.0.0.0:${mcpPort}`);
-    console.log(`[mcp]   GET  /sse               — SSE connection`);
-    console.log(`[mcp]   POST /messages           — JSON-RPC calls`);
+    console.log(`[mcp] MCP server listening on http://0.0.0.0:${mcpPort}`);
+    console.log(`[mcp]   POST /mcp               — Streamable HTTP (JSON or SSE)`);
+    console.log(`[mcp]   GET  /sse               — SSE connection (legacy)`);
+    console.log(`[mcp]   POST /messages           — JSON-RPC calls (legacy)`);
     console.log(`[mcp]   GET  /health             — health check`);
     console.log("");
     console.log("[mcp] Connect AI clients to:");
-    console.log(`[mcp]   http://<host>:${mcpPort}/sse   header: x-brain-key: <KEY>`);
+    console.log(`[mcp]   http://<host>:${mcpPort}/mcp   header: x-brain-key: <KEY>  or  Authorization: Bearer <KEY>`);
+    console.log(`[mcp]   http://<host>:${mcpPort}/sse   header: x-brain-key: <KEY>  (legacy)`);
     if (allowKeyInQuery) {
-      console.log(`[mcp]   http://<host>:${mcpPort}/sse?key=<KEY>   (header-less clients)`);
+      console.log(`[mcp]   http://<host>:${mcpPort}/mcp?key=<KEY>   (header-less clients)`);
     }
   });
 }

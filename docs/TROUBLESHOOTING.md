@@ -192,8 +192,14 @@ Also set `EMBEDDING_DIMENSIONS` env var to match.
 Almost always `mcp-remote` can't reach your URL.
 
 ```bash
-# From a regular terminal, run the same command Claude Desktop would:
+# From a regular terminal, run the same command Claude Desktop would (legacy SSE):
 npx -y mcp-remote http://localhost:8080/sse?key=YOUR_KEY
+
+# Or probe the recommended /mcp endpoint directly:
+curl -s http://localhost:8080/mcp \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
 Should connect and print SSE events. If it errors:
@@ -240,7 +246,11 @@ The SSE connection drops after 30–60 sec on some networks (corporate proxies, 
 
 You have 2+ replicas without session affinity. The SSE *connect* hit one pod; the follow-up POST hit a different pod that doesn't know the session.
 
-**K8s fix** — add to your Service:
+**Best fix** — switch the client to `/mcp` (Streamable HTTP). It is stateless, so it
+does not depend on any pod remembering a session. See the
+[migration guide](14-MIGRATING-TO-STREAMABLE-HTTP.md).
+
+**K8s fix (legacy SSE)** — add to your Service:
 ```yaml
 sessionAffinity: ClientIP
 sessionAffinityConfig:
@@ -301,7 +311,7 @@ Open Brain listens on **two ports**:
 | Port | Protocol | Auth | Intended scope |
 |---|---|---|---|
 | `8000` | REST (`/health`, `/memories/*`, `/stats`) | None — assumes in-cluster / internal | In-cluster or trusted-network only |
-| `8080` | MCP-over-SSE (`/sse`, `/messages`) | `MCP_ACCESS_KEY` via `x-brain-key` header or `?key=` query | Safe to expose publicly |
+| `8080` | MCP (`/mcp` Streamable HTTP; `/sse` + `/messages` legacy) | `MCP_ACCESS_KEY` via `Authorization: Bearer`, `x-brain-key` header, or `?key=` query | Safe to expose publicly |
 
 ### Self-hosted K8s + Tailscale Funnel: REST is in-cluster only
 
@@ -313,7 +323,7 @@ The K8s manifest in `deploy/on-prem/k8s/` ships a single Tailscale Funnel that f
 
 External tooling that wants high-throughput bulk capture has two correct paths:
 
-1. **Use MCP-over-SSE** with `capture_thoughts` (batch). Make sure the client honours `res.isError` on tool responses — MCP can return tool-level errors with a 200 envelope, and silently treating them as success was the root cause of the 2026-05-18 Plan-Forge "0 failures / 20 records lost" incident.
+1. **Use MCP** (`/mcp` Streamable HTTP, or `/sse`) with `capture_thoughts` (batch). Make sure the client honours `res.isError` on tool responses — MCP can return tool-level errors with a 200 envelope, and silently treating them as success was the root cause of the 2026-05-18 Plan-Forge "0 failures / 20 records lost" incident.
 2. **Run the tool inside the cluster** (e.g. a Job or `kubectl run` pod) and call REST on `openbrain-api.openbrain.svc.cluster.local:8000` directly.
 
 Do **not** add a second Funnel for port 8000 without first putting auth in front of the REST API. The deployment assumes REST is internal-only.

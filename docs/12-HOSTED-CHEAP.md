@@ -12,7 +12,7 @@ You'll pick **one** Postgres provider and **one** place to host the MCP server. 
 
 ```mermaid
 flowchart LR
-    A[Any AI client\nphone, laptop, work PC] -->|HTTPS / MCP SSE| B[Open Brain MCP server\nFly.io / Render / Railway]
+    A[Any AI client\nphone, laptop, work PC] -->|HTTPS / MCP Streamable HTTP| B[Open Brain MCP server\nFly.io / Render / Railway]
     B -->|pgvector queries| C[(Managed Postgres\nSupabase / Neon / Railway)]
     B -->|embeddings + LLM| D[OpenRouter or\nOllama on your laptop]
 ```
@@ -154,12 +154,16 @@ Same as the other paths, just point at your hosted URL:
 {
   "servers": {
     "openbrain": {
-      "type": "sse",
-      "url": "https://openbrain-<your-handle>.fly.dev/sse?key=YOUR_MCP_ACCESS_KEY"
+      "type": "http",
+      "url": "https://openbrain-<your-handle>.fly.dev/mcp",
+      "headers": { "Authorization": "Bearer YOUR_MCP_ACCESS_KEY" }
     }
   }
 }
 ```
+
+> Prefer `/mcp` (Streamable HTTP). The legacy `"type": "sse"` +
+> `https://openbrain-<your-handle>.fly.dev/sse?key=YOUR_MCP_ACCESS_KEY` still works.
 
 Verify end-to-end:
 
