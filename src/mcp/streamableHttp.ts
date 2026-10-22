@@ -8,6 +8,10 @@
  * This transport runs **stateless** — no `sessionIdGenerator` — so there is no
  * server-side session memory and no `sessionAffinity` requirement. The access key
  * is authenticated on every request by the caller (see src/mcp/auth.ts).
+ *
+ * A stateless transport is **single-use**: the SDK throws on a second
+ * `handleRequest`, so the caller must create a fresh transport (and a fresh
+ * `Server`, which can only hold one transport) per request.
  */
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";

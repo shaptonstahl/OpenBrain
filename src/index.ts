@@ -92,12 +92,6 @@ async function main(): Promise<void> {
 
   const mcpPort = parseInt(process.env.MCP_PORT ?? "8080", 10);
 
-  // Streamable HTTP transport — one long-lived Server + stateless transport.
-  // Every `/mcp` request is authenticated independently; there is no session map.
-  const streamableHttpServer = createMcpServer();
-  const streamableTransport = createStreamableHttpTransport();
-  await streamableHttpServer.connect(streamableTransport);
-
   // Track active SSE transports for cleanup
   const sessions = new Map<string, McpSession>();
 
@@ -181,8 +175,8 @@ async function main(): Promise<void> {
     }
 
     // Streamable HTTP endpoint — serves JSON and SSE from one path. Stateless:
-    // every request is authenticated independently, and the SDK transport has no
-    // session to correlate across requests.
+    // every request is authenticated independently, and the SDK transport is
+    // single-use, so a fresh Server + transport are created per request.
     if (url.pathname === "/mcp") {
       const auth = await authenticateMcpRequest(pool, req, url, {
         legacyKey: mcpAccessKey,
@@ -196,7 +190,10 @@ async function main(): Promise<void> {
         return;
       }
 
-      await streamableTransport.handleRequest(req, res);
+      const server = createMcpServer();
+      const transport = createStreamableHttpTransport();
+      await server.connect(transport);
+      await transport.handleRequest(req, res);
       return;
     }
 
