@@ -220,6 +220,33 @@ Two causes, both deliberate:
   `[mcp] /sse denied (revoked)` or `(expired)`. Check with `npm run key -- list`.
   A key cannot be un-revoked or re-read; mint a replacement.
 
+### Claude connector: "server asked for sign-in when checked (status 404)"
+
+The Claude app's MCP connector reports a mismatch like:
+
+> OpenBrain is set up as not requiring sign-in, but the server asked for sign-in
+> when checked (status 404). Update the connector's auth settings…
+
+Open Brain does not use OAuth — it authenticates with a key (header or `?key=`). When
+the connector probes the server, an unauthenticated request returns `401`; the connector
+reads that as "sign-in required", tries OAuth discovery, and gets `404` because there is
+no OAuth server.
+
+**The connector caches that auth decision.** After you fix the server (e.g. set
+`MCP_ALLOW_KEY_IN_QUERY=true`), the connector keeps the stale "sign-in required" verdict
+until it re-probes.
+
+**Fix — remove the connector and add it again**, this time pointing at the URL **with the
+key in it** and auth set to **"none"** (key-in-URL needs `MCP_ALLOW_KEY_IN_QUERY=true`):
+
+```
+https://<host>/sse?key=<KEY>     # SSE transport
+https://<host>/mcp?key=<KEY>     # Streamable HTTP transport
+```
+
+Re-adding forces a fresh auth probe; with the key in the URL the probe succeeds and the
+connector stops expecting sign-in.
+
 ### Server exits at boot with "Refusing to start: no access keys configured"
 
 There is no usable row in `access_keys` **and** `MCP_ACCESS_KEY` is empty. Earlier

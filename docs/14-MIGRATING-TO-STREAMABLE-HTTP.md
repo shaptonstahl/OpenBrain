@@ -180,6 +180,7 @@ at `/mcp` to confirm a real client handshake.
 |---|---|
 | `401` on `/mcp` | Key missing or wrong. Confirm it matches a row in `access_keys` (or `MCP_ACCESS_KEY`), and that you sent `Authorization: Bearer …` or `x-brain-key`. |
 | `?key=` ignored | `MCP_ALLOW_KEY_IN_QUERY` is off. Turn it on, or move the key to a header. |
+| Claude connector: "server asked for sign-in (status 404)" | The connector cached a stale auth verdict after a `401`. **Remove the connector and re-add it**, pointing at the URL **with the key in it** (`/sse?key=…` or `/mcp?key=…`) and auth = "none". See [TROUBLESHOOTING.md](TROUBLESHOOTING.md). |
 | Client connects but no tools | It may still be pointed at `/sse`; confirm the URL ends in `/mcp` and the transport is `"http"`. |
 | `/sse` still works, `/mcp` 404 | You are on an old build — `/mcp` shipped after the Streamable HTTP support was added. Rebuild/redeploy. |
 
