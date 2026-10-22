@@ -80,7 +80,9 @@ describe("stateless /mcp — fresh transport per request", () => {
         body: INITIALIZE,
       });
       expect(res.status).toBe(200);
-      const body = await res.json();
+      const body = (await res.json()) as {
+        result?: { serverInfo?: { name?: string } };
+      };
       expect(body.result?.serverInfo?.name).toBe("open-brain");
     }
   });
